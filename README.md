@@ -91,16 +91,28 @@ python analyzer.py sample_logs/mixed_windows.csv sample_logs/mixed_linux.log --o
 
 ### Windows (`.csv`)
 
-This tool reads Windows Security Event Log data exported as CSV with
-these columns (the kind of file you get from
-`Get-WinEvent -LogName Security | Export-Csv` after trimming it down,
-or Event Viewer's "Save Filtered Log File As..."):
+Two Windows CSV formats are supported and auto-detected:
+
+**1. Event Viewer's GUI export** ("Save All Events As..." / "Save
+Filtered Log File As...") - just export your Security log and point the
+tool at the file directly, no manual reformatting needed. This format
+has a well-known quirk: its header only names 5 columns
+(`Keywords, Date and Time, Source, Event ID, Task Category`) but every
+row actually has 6 fields - the event description has no column name.
+Reading it naively (e.g. opening in Excel/pandas with default settings)
+silently shifts every column over by one. This tool detects that header
+and reads it correctly, then extracts the account/IP/process details it
+needs straight out of the structured `Field Name:	value` text Windows
+always writes into the description.
+
+**2. A simplified, documented schema** - useful if you're building CSVs
+by hand, from `Get-WinEvent`, or for testing:
 
 ```
 TimeCreated,EventID,Account,SourceIP,TargetAccount,ProcessName,CommandLine,Message
 ```
 
-Event IDs this tool understands:
+Event IDs both formats understand:
 
 | Event ID | Meaning | Mapped to |
 |---|---|---|
@@ -109,6 +121,9 @@ Event IDs this tool understands:
 | 4720 | A user account was created | `account_created` |
 | 4732 | A member was added to a security-enabled group | `privilege_change` |
 | 4688 | A new process has been created | `process_execution` |
+
+Everything else is parsed but ignored - only these five event types feed
+the detectors.
 
 ### Linux (anything not `.csv`)
 

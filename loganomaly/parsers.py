@@ -37,6 +37,18 @@ Event IDs this tool understands:
     4732 - A member was added to a security-enabled group  -> privilege_change
     4688 - A new process has been created                  -> process_execution
 
+This tool also auto-detects the CSV you get from Windows Event Viewer's
+"Save All Events As..." / "Save Filtered Log File As..." export
+(the GUI-based export, as opposed to PowerShell). That export has a
+well-known quirk: the header row only names 5 columns
+(Keywords, Date and Time, Source, Event ID, Task Category) but every
+data row actually has 6 fields - the trailing event description has no
+column name. Reading that file naively makes pandas treat the first
+field as an unlabeled index and silently shifts everything over by one
+column. We read it with explicit column names instead, then pull the
+account/IP/process details we need straight out of the description text
+using the consistent "Field Name:\tvalue" labels Windows always writes.
+
 ----------------------------------------------------------------------
 Linux input format
 ----------------------------------------------------------------------
@@ -51,6 +63,7 @@ Standard syslog-style /var/log/auth.log lines, e.g.:
 
 import re
 import os
+import ntpath
 from datetime import datetime
 
 import pandas as pd
@@ -108,6 +121,143 @@ def _clean(value):
     if value is None or (isinstance(value, float) and pd.isna(value)):
         return None
     return str(value)
+
+
+# ---------------------------------------------------------------------------
+# Windows Event Viewer "Export List..." CSV parsing
+# ---------------------------------------------------------------------------
+# This is the format you get from the Event Viewer GUI (right-click a log
+# -> "Save All Events As..."), as opposed to a hand-built/PowerShell CSV.
+# Its header is missing a name for the description column, so we read it
+# with explicit column names instead of trusting the header row.
+
+EVENTVIEWER_RAW_COLUMNS = ["Keywords", "TimeCreated", "Source", "EventID", "TaskCategory", "Message"]
+
+
+def _looks_like_eventviewer_export(path):
+    with open(path, "r", encoding="utf-8-sig", errors="replace") as f:
+        header = f.readline().strip()
+    cols = [c.strip() for c in header.split(",")]
+    return cols[:5] == ["Keywords", "Date and Time", "Source", "Event ID", "Task Category"]
+
+
+def _split_sections(message):
+    """
+    Windows event descriptions are organized into named sections like:
+
+        Subject:
+        	Account Name:		jsmith
+        New Logon:
+        	Account Name:		jsmith2
+
+    A line is treated as the start of a new section if it has no leading
+    tab/space and ends with a colon (the field lines underneath are always
+    indented). Returns {section_name: section_text}.
+    """
+    sections = {}
+    current_name = None
+    current_lines = []
+
+    for line in message.replace("\r\n", "\n").split("\n"):
+        is_section_header = (
+            line and not line[0].isspace() and line.rstrip().endswith(":")
+        )
+        if is_section_header:
+            if current_name is not None:
+                sections[current_name] = "\n".join(current_lines)
+            current_name = line.rstrip().rstrip(":").strip()
+            current_lines = []
+        else:
+            current_lines.append(line)
+
+    if current_name is not None:
+        sections[current_name] = "\n".join(current_lines)
+    return sections
+
+
+def _extract_field(section_text, field_name):
+    """Pull `value` out of a "    Field Name:\tvalue" line within a section."""
+    if not section_text:
+        return None
+    # Note: [ \t]* (not \s*) after the colon - \s also matches newlines, which
+    # would let an empty value ("Field Name:\t" with nothing after it) swallow
+    # the line break and capture the *next* line's text instead of nothing.
+    match = re.search(rf"^[ \t]*{re.escape(field_name)}:[ \t]*(.*)$", section_text, re.MULTILINE)
+    if not match:
+        return None
+    value = match.group(1).strip()
+    return value if value and value != "-" else None
+
+
+def _fields_from_message(event_id, message):
+    """Map the raw Windows event description text to our normalized
+    account/source_ip/target_account/process_name/details fields."""
+    sections = _split_sections(message)
+    fields = {"account": None, "source_ip": None, "target_account": None,
+              "process_name": None, "details": message.strip()}
+
+    if event_id == 4624:  # logon_success
+        fields["account"] = _extract_field(sections.get("New Logon"), "Account Name")
+        fields["source_ip"] = _extract_field(sections.get("Network Information"), "Source Network Address")
+
+    elif event_id == 4625:  # logon_failed
+        fields["account"] = _extract_field(sections.get("Account For Which Logon Failed"), "Account Name")
+        fields["source_ip"] = _extract_field(sections.get("Network Information"), "Source Network Address")
+
+    elif event_id == 4720:  # account_created
+        fields["account"] = _extract_field(sections.get("Subject"), "Account Name")
+        fields["target_account"] = _extract_field(sections.get("New Account"), "Account Name")
+
+    elif event_id == 4732:  # privilege_change
+        actor = _extract_field(sections.get("Subject"), "Account Name")
+        # Windows frequently leaves "Member: Account Name" blank and only
+        # fills in the security ID (SID) - fall back to that when needed.
+        member = (_extract_field(sections.get("Member"), "Account Name")
+                  or _extract_field(sections.get("Member"), "Security ID"))
+        group = _extract_field(sections.get("Group"), "Group Name")
+        fields["account"] = actor
+        fields["target_account"] = member
+        fields["details"] = f"added to group '{group}'" if group else message.strip()
+
+    elif event_id == 4688:  # process_execution
+        fields["account"] = _extract_field(sections.get("Creator Subject"), "Account Name")
+        process_path = _extract_field(sections.get("Process Information"), "New Process Name")
+        command_line = _extract_field(sections.get("Process Information"), "Process Command Line")
+        fields["process_name"] = ntpath.basename(process_path) if process_path else None
+        fields["details"] = command_line or process_path or message.strip()
+
+    return fields
+
+
+def parse_windows_eventviewer_csv(path) -> pd.DataFrame:
+    """Read a Windows Event Viewer GUI export ("Save All Events As...")
+    and normalize it into the common schema."""
+    raw = pd.read_csv(path, skiprows=1, names=EVENTVIEWER_RAW_COLUMNS,
+                       encoding="utf-8-sig", dtype=str)
+    rows = []
+
+    for _, row in raw.iterrows():
+        try:
+            event_id = int(row["EventID"])
+        except (TypeError, ValueError):
+            continue
+        event_type = WINDOWS_EVENT_MAP.get(event_id)
+        if event_type is None:
+            continue  # not an event ID this tool knows how to interpret
+
+        timestamp = pd.to_datetime(row["TimeCreated"], errors="coerce")
+        if pd.isna(timestamp):
+            continue
+        message = row["Message"] if isinstance(row["Message"], str) else ""
+
+        rows.append({
+            "timestamp": timestamp,
+            "source": "windows",
+            "event_type": event_type,
+            **_fields_from_message(event_id, message),
+        })
+
+    return pd.DataFrame(rows, columns=COLUMNS)
 
 
 # ---------------------------------------------------------------------------
@@ -249,7 +399,10 @@ def load_logs(paths) -> pd.DataFrame:
     for path in paths:
         ext = os.path.splitext(path)[1].lower()
         if ext == ".csv":
-            frames.append(parse_windows_csv(path))
+            if _looks_like_eventviewer_export(path):
+                frames.append(parse_windows_eventviewer_csv(path))
+            else:
+                frames.append(parse_windows_csv(path))
         else:
             frames.append(parse_linux_auth_log(path))
 
