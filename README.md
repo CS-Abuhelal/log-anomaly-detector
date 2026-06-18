@@ -165,6 +165,45 @@ IPs use the `203.0.113.0/24` range, which [RFC 5737](https://datatracker.ietf.or
 reserves specifically for documentation/examples and which isn't
 routable on the real internet.
 
+## Real-world test
+
+Beyond the synthetic samples, this tool was run against a real Windows
+11 machine's Security event log, exported with Event Viewer's "Save All
+Events As..." (the GUI export format - see [Input log formats](#input-log-formats)
+above):
+
+```
+Events parsed   : 1512
+Total findings  : 0
+```
+
+A clean result here isn't just "nothing happened to print" - each
+detector actually ran its checks against real data and had something
+concrete to say no to:
+
+- **Unusual login hours**: successful logons were spread across 21 of
+  24 hours (this machine runs scheduled tasks and background logons
+  around the clock), so there was no statistically rare hour for the
+  z-score check to flag - a meaningfully different result from a
+  typical 9-5 workstation, and the detector correctly reflected that.
+- **Brute force**: only 2 failed logins appeared in the entire log,
+  nowhere near the 5-failures-in-5-minutes default threshold.
+- **New account creation**: zero `4720` events - no new accounts were
+  created during the captured period.
+- **Privilege escalation**: zero `4732` events - no group membership
+  changes.
+- **Suspicious process execution**: 26 process-creation events, all
+  ordinary Windows boot/system processes (`smss.exe`, `csrss.exe`,
+  `lsass.exe`, `services.exe`, etc.) that were neither on the attacker
+  watchlist nor statistically rare.
+
+This run also caught a real parsing bug in the Event Viewer CSV reader:
+a process-creation event with an empty `New Process Name` field was
+having the *next* line's text bleed into it, due to a regex using `\s*`
+(which matches newlines) instead of `[ \t]*` right after a field's
+colon. Fixed, and locked in with a regression test in
+`tests/test_parsers.py`.
+
 ## Tuning detection thresholds
 
 ```bash
